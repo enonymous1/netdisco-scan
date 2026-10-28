@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netdisco-scan"
+version = "2.0.0"
+description = "Scan the local network for devices and services (mDNS + SSDP) via netdisco"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{name = "enonymous1"}]
+keywords = ["network", "discovery", "mdns", "ssdp", "upnp", "zeroconf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    # netdisco is deprecated upstream (no new versions or fixes); 3.0.0
+    # is the last release and is pinned deliberately. See README.md.
+    "netdisco==3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/enonymous1/netdisco-scan"
+
+[project.scripts]
+netdisco-scan = "netdisco_scan.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
