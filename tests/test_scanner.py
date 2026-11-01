@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import sys
 from datetime import datetime, timezone
 
 import pytest
 
-from netdisco_scan.scanner import ScanError, ScanResult, scan_network, to_jsonable
+from netdisco_scan.scanner import (
+    DependencyError,
+    NetdiscoDiscoveryAdapter,
+    ScanConfig,
+    ScanError,
+    ScanResult,
+    scan_network,
+    to_jsonable,
+)
 
 
 class FakeEntry:
@@ -171,6 +181,64 @@ def test_non_positive_seconds_rejected_before_scanning():
     assert not fake.scanned
 
 
+def test_non_finite_and_over_limit_seconds_rejected():
+    # NaN used to pass the old `seconds <= 0` check (both comparisons
+    # are false for NaN) and then fail inside time.sleep(); inf did
+    # the same in the other direction.
+    fake = FakeDiscovery()
+    for bad in (math.nan, math.inf, -math.inf, 3601):
+        with pytest.raises(ValueError):
+            run(fake, seconds=bad)
+    assert not fake.scanned
+
+
+def test_scan_config_object_path_and_no_descriptions():
+    fake = FakeDiscovery({"good": ["ok"], "also": ["fine"]})
+    calls = []
+    original = fake.get_info
+
+    def recording(device_type):
+        calls.append(device_type)
+        return original(device_type)
+
+    fake.get_info = recording
+    result, sleep_calls = run(
+        fake,
+        seconds=5.0,
+    )
+    assert result.seconds == 5.0
+    result2 = scan_network(
+        ScanConfig(seconds=2.5, include_descriptions=False),
+        discovery_factory=lambda: fake,
+        sleep=lambda value: sleep_calls.append(value),
+    )
+    assert result2.seconds == 2.5
+    assert result2.descriptions_included is False
+    assert [d.device_type for d in result2.discovered] == ["good", "also"]
+    assert all(d.info == [] for d in result2.discovered)
+    # get_info was called only for the first (descriptions-on) scan.
+    assert calls == ["good", "also"]
+
+
+def test_discover_non_iterable_raises_discovery_error():
+    fake = FakeDiscovery({"good": ["ok"]})
+    fake.discover = lambda: None  # type: ignore[method-assign]
+    with pytest.raises(ScanError, match="did not return a list"):
+        run(fake)
+    assert fake.stopped
+
+
+def test_adapter_delegates_to_inner_discovery():
+    inner = FakeDiscovery({"good": ["ok"]}, zeroconf_entries=[FakeEntry("a")])
+    adapter = NetdiscoDiscoveryAdapter(inner)
+    adapter.scan()
+    assert adapter.discover() == ["good"]
+    assert adapter.get_info("good") == ["ok"]
+    assert [repr(e) for e in adapter.mdns.entries] == ["<FakeEntry a>"]
+    adapter.stop()
+    assert inner.stopped
+
+
 def test_stop_error_does_not_mask_a_good_result():
     fake = FakeDiscovery({"good": ["ok"]}, stop_error=True)
     result, _ = run(fake)
@@ -192,13 +260,24 @@ def test_to_jsonable_handles_mixed_and_unknown_values():
     assert to_jsonable([{"a": (1, 2)}]) == [{"a": [1, 2]}]
 
 
+def test_to_jsonable_non_finite_floats_and_duplicate_keys(caplog):
+    assert to_jsonable(math.nan) is None
+    assert to_jsonable(math.inf) is None
+    assert to_jsonable(-math.inf) is None
+    assert to_jsonable({"a": 1.5}) == {"a": 1.5}
+    caplog.set_level(logging.WARNING, logger="netdisco_scan.scanner")
+    # Keys 1 and "1" stringify to the same key; the first wins, loudly.
+    assert to_jsonable({1: "first", "1": "second"}) == {"1": "first"}
+    assert "duplicate JSON key" in caplog.text
+
+
 def test_default_factory_reports_missing_netdisco(monkeypatch):
     # A None entry makes the import raise ImportError, as if uninstalled.
     monkeypatch.setitem(sys.modules, "netdisco", None)
     monkeypatch.setitem(sys.modules, "netdisco.discovery", None)
     from netdisco_scan.scanner import _default_factory
 
-    with pytest.raises(ScanError, match="netdisco is not installed"):
+    with pytest.raises(DependencyError, match="netdisco is not installed"):
         _default_factory()
 
 

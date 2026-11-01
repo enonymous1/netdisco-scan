@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netdisco-scan"
-version = "2.0.0"
+version = "2.1.0"
 description = "Scan the local network for devices and services (mDNS + SSDP) via netdisco"
 readme = "README.md"
 license = "MIT"
@@ -36,12 +36,16 @@ netdisco-scan = "netdisco_scan.cli:main"
 
 [project.optional-dependencies]
 dev = [
+    "mypy>=1",
     "pytest>=8",
     "ruff>=0.6",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"netdisco_scan" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,3 +56,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
